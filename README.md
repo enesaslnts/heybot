@@ -29,3 +29,4 @@ kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.pas
 2. run command: python bazinga_cve_bot.py
 3. See your message in discord channel
 ```
+
