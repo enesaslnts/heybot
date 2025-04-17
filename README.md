@@ -17,7 +17,7 @@ kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.pas
 
 ---
 #### **2. Checkout repro and modify **
-```bash
+```bash   
 1. clone repo 
 2. modify things for your repro
 3. See a running pipeline
