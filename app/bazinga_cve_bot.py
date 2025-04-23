@@ -6,6 +6,7 @@ import os
 from dotenv import load_dotenv
 from openai import OpenAI
 
+
 # Load environment variables
 load_dotenv()
 
@@ -16,6 +17,7 @@ logging.basicConfig(level=logging.DEBUG)
 DISCORD_WEBHOOK_URL = os.getenv('DISCORD_WEBHOOK_URL')
 MODEL_HUMOR_PATH = os.getenv('MODEL_HUMOR_PATH1')
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')
+PROJECT_CONTEXT_INFO = os.getenv("PROJECT_CONTEXT_INFO", "Keine weiteren Informationen")
 
 if not DISCORD_WEBHOOK_URL:
     raise ValueError("DISCORD_WEBHOOK_URL is missing in the .env file.")
@@ -36,21 +38,47 @@ SEVERITY_ORDER = {
     "UNKNOWN": 4
 }
 
+def generate_joke(vulnerability, style="neutral"):
+    """Generate a joke based on the vulnerability and style."""
+    joke = ""
+    if style == "neutral":
+        joke = f"This vulnerability in {vulnerability['Package']} is like a ticking time bomb. Better patch it soon!"
+    elif style == "sarkastisch":
+        joke = f"Oh great, another flaw in {vulnerability['Package']}. Because we really needed more problems!"
+    elif style == "freundlich":
+        joke = f"Looks like {vulnerability['Package']} needs a little TLC – time to fix that bug! 😊"
+    return joke
+
+async def get_mcp_context():
+    """Fetch MCP context (style, mode, language) from the MCP server"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get("http://localhost:7861/mcp/context") as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    logging.error("Error fetching MCP context")
+                    return {"style": "neutral", "mode": "default", "language": "de"}
+    except Exception as e:
+        logging.error(f"Error getting MCP context: {e}")
+        return {"style": "neutral", "mode": "default", "language": "de"}
+
 def load_humor_template():
-    """Load the Sheldon Cooper-style humor template"""
+    """Load the humor template from the humor file."""
     try:
         with open(MODEL_HUMOR_PATH, 'r') as file:
             return file.read().strip()
     except Exception as e:
         logging.error(f"Error loading humor template: {e}")
-        return """You are Sheldon Cooper from The Big Bang Theory, specializing in roasting vulnerabilities with Penny jokes. 
+        return """You are a AI specializing in roasting vulnerabilities with  fun jokes. The style from the Joke base on humor_style and the mode
         Rules:
-        - Always compare vulnerabilities to Penny's quirks
-        - Include scientific references
-        - Use signature phrases like "Bazinga!"
-        - Keep jokes 1-2 sentences
-        - Include emojis related to physics/science 🔭⚛️
-        Example: "This buffer overflow is as unpredictable as Penny's acting career! Bazinga! 🎭"
+        - Include scientific references where appropriate.
+        - The style from the Joke base on humor_style and the mode
+        - Keep jokes 1-2 sentences.
+        - Use emojis that match the context of the joke.
+        - your are {mode} and {humor_style} and you do jokes like that too
+
+        Respond ONLY with the joke - no explanations!"
         """
 
 def sort_vulnerabilities(vulnerabilities):
@@ -60,29 +88,55 @@ def sort_vulnerabilities(vulnerabilities):
         key=lambda x: SEVERITY_ORDER.get(x.get('Severity', 'UNKNOWN'), 100)
     )
 
-async def generate_security_report(vulnerabilities, humor_template):
+async def generate_security_report(vulnerabilities, humor_template, context):
     """Generate a full security report with joke, table, and action items using DeepSeek"""
     try:
         if not vulnerabilities:
-            return "No vulnerabilities found! Your code is as flawless as Sheldon's rigid routine. Bazinga! ⚛️"
+            return "No vulnerabilities found! Your code is as flawless as a perfect algorithm."
 
         # Sort vulnerabilities by severity before processing
         sorted_vulns = sort_vulnerabilities(vulnerabilities)
 
+        # Hol den aktuellen Humor-Stil und die Sprache aus dem Kontext
+        humor_style = context.get("style", "neutral")
+        language = context.get("language", "de")
+        mode= context.get("mode", "juristisch")
+
+        # Anpassung des Humor-Stils im Template
+        if humor_style == "sarkastisch":
+            humor_template += "\n(Verwende einen sarkastischen Ton in den Witzen!)"
+        elif humor_style == "freundlich":
+            humor_template += "\n(Verwende einen freundlichen Ton in den Witzen!)"
+
+        # Sprachoptionen im Prompt einfügen
+        if language == "de":
+            language_note = "Verwende deutsche Sprache für alle Antworten."
+        elif language == "en":
+            language_note = "Use English for all responses."
+        else:
+            language_note = "Use the appropriate language based on the context."
+
+        additional_info = context.get("additional_info", "Keine weiteren Informationen zum Projektkontext.")
+        
         prompt = f"""
         {humor_template}
+        Humor Style: {humor_style}
+        {language_note}
+        Language: {language}
+        mode: {mode}
 
-        Analyze these vulnerabilities (sorted by severity) and generate:
-        1. A Sheldon Cooper joke.
+        Analyze the vulnerabilities below and generate:
+        1. A joke about the vulnerability (e.g., comparison to everyday situations, science references, etc.)
         2. A markdown table with columns: Package, Severity, CVE, Fixed Version, How to Fix.
-        3. Key technical notes for critical/high vulnerabilities.
+        3. Key notes for critical/high vulnerabilities.
         4. Actionable remediation steps.
+        5. your are {mode} and {humor_style} and you do jokes like that too
 
         Vulnerabilities (first 5 by severity):
         {json.dumps(sorted_vulns[:5], indent=2)}
 
-        --- Example Format ---
-        **Joke**: "This SQL injection is as messy as Penny's apartment! Bazinga! 🛋️"
+        Additional context:
+        {context.get("additional_info", "No additional context.")}
 
         **Vulnerabilities**:
         ```
@@ -100,21 +154,34 @@ async def generate_security_report(vulnerabilities, humor_template):
         - Restrict untrusted inputs for HIGH-severity unfixable issues.
         """
 
+        # Anfrage an DeepSeek (angepasst für Humor und Sprache)
         response = client.chat.completions.create(
             model="deepseek-chat",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.7  # Balance creativity and structure
+            temperature=0.7  # Balance von Kreativität und Struktur
         )
         
         report = response.choices[0].message.content
-        if "Bazinga!" not in report:
-            report = report.replace("\n", "\n") + " Bazinga! ⚛️"  # Ensure joke ending
-        
+
+        # # Adjust according to humor style
+        # if humor_style == "sarkastisch":
+        #     report += " Wow, that's a real shocker... not! 😒"
+        # elif humor_style == "freundlich":
+        #     report += " Don't worry, we can fix this quickly! 😊"
+        # else:
+        #     report += " No big deal, we'll get it sorted out! 😅"
+
+        # Adjust according to mode
+        if context["mode"] == "error":
+            report += " This issue needs urgent attention. Please patch it ASAP!"
+        elif context["mode"] == "default":
+            report += " It's a manageable issue, but better safe than sorry."
+
         return report
 
     except Exception as e:
         logging.error(f"Error generating report: {e}")
-        return "This vulnerability analysis failed harder than Penny's cooking! Bazinga! 🔥"
+        return "This vulnerability analysis failed harder than my last coding project!"
 
 def load_trivy_logs(log_path="trivy_output.json"):
     try:
@@ -149,7 +216,12 @@ async def main():
         vulnerabilities = load_trivy_logs()
         humor_template = load_humor_template()
         
-        report = await generate_security_report(vulnerabilities, humor_template)
+        # Hol den aktuellen Kontext vom MCP-Server
+        context = await get_mcp_context()
+        print("Context:", context)
+        context["additional_info"] = PROJECT_CONTEXT_INFO  # 👈 fügt .env-Info ein
+        # Generiere den Bericht mit Kontext
+        report = await generate_security_report(vulnerabilities, humor_template, context)
         await send_discord_message_async(report)
         logging.info("Full security report sent to Discord")
 
