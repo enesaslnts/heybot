@@ -1,3 +1,7 @@
 aiohttp
 python-dotenv
 openai
+discord.py
+gradio
+fastapi
+uvicorn

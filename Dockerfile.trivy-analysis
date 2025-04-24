@@ -4,4 +4,7 @@ FROM ghcr.io/enesaslnts/heybot:latest
 # Copy the Trivy scan output file into the image
 COPY trivy_output.json /app/trivy_output.json
 
-CMD ["python", "main.py"]
+# Expose the port
+EXPOSE 7861
+
+CMD ["python", "mcp_server/mcp_server.py"]
