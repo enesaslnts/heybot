@@ -15,14 +15,9 @@ spec:
     spec:
       containers:
         - name: heybot
-<<<<<<< HEAD
           image: ghcr.io/enesaslnts/heybot-with-trivy-output:latest
-          command: ["/bin/bash", "-c", "while true; do sleep 3600; done"]
-=======
-          image: ghcr.io/aiboosts/heybot-with-trivy-output:latest
           ports:
             - containerPort: 7861
           # command: ["/bin/bash", "-c", "while true; do sleep 3600; done"]
->>>>>>> upstream/main
       imagePullSecrets:
         - name: gghcr-secret  # Das ImagePullSecret, das du vorher erstellt hast
